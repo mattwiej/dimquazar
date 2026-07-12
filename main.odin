@@ -35,8 +35,20 @@ config :: struct {
 	contAlphaWidth:    f64,
 	//===Results
 	numberOfPoints:    f64,
-	finalResult:       result,
+	finalResult:       finalResult,
 	results:           [dynamic]result,
+}
+
+finalResult :: struct {
+	using result: result,
+	minAlpha:     f64,
+	maxAlpha:     f64,
+	minAmplitude: f64,
+	maxAmplitude: f64,
+	minSigma:     f64,
+	maxSigma:     f64,
+	minX0:        f64,
+	maxX0:        f64,
 }
 
 result :: struct {
@@ -49,6 +61,10 @@ result :: struct {
 
 main :: proc() {
 
+	prof_init()
+	defer prof_deinit()
+
+	prof_begin("Program")
 	konfiguracja: config
 
 	konfiguracja.windowX = 2801
@@ -58,8 +74,8 @@ main :: proc() {
 
 	konfiguracja.contLambda0 = 3000
 	konfiguracja.contB = 2.128
-	konfiguracja.contAlphaGuess = -1.556
-	konfiguracja.contAlphaWidth = 0.01
+	konfiguracja.contAlphaGuess = 1.556
+	konfiguracja.contAlphaWidth = 0.1
 
 	konfiguracja.amplitudeGuess = 1
 	konfiguracja.amplitudeWidth = 3
@@ -74,28 +90,37 @@ main :: proc() {
 
 	konfiguracja.results = make([dynamic]result, i32(length), i32(length))
 
+	prof_begin("zerowanie tablicy wynikow")
 	for &w in konfiguracja.results {
 		// NOTE: musimy dodac tu max f64 bo inaczej nie zapiszemy wynikow do tej tablicy,
 		//powiewaz domyslnie pamiec w Odnie jest zerowana a chi^2 nie bedzie mniejsze od zera
 		w.chi2 = math.F64_MAX
 	}
-
+	prof_end()
 	dane: data
 	dane.flux = make([dynamic]f64)
 	dane.lambda = make([dynamic]f64)
 
 	pathTest := "testModel.txt"
 
+	prof_begin("seedowanie rng")
 	setSeedOfThePRNG(&konfiguracja)
+	prof_end()
 
+	prof_begin("ladowanie danych z pliku")
 	loadDataFromFile(pathTest, &dane)
+	prof_end()
+
+	prof_begin("montecarlo")
 	monteCarlo(&konfiguracja, dane)
+	prof_end()
 
 	fmt.printf("Results: %#v\n", konfiguracja.finalResult)
 
-	saveResultsToFileJson(konfiguracja, "wynik.json")
+	prof_begin("zapisywanie")
+	//saveResultsToFileJson(konfiguracja, "wynik.json")
 	saveResultsToFile(konfiguracja, "wynikCSV.txt")
-
+	prof_end()
 
 	// NOTE: tak mozna na przyklad zrobic kilka losowan na raz
 
@@ -111,22 +136,42 @@ main :: proc() {
 	//}
 
 
+	prof_end()
 }
 
 monteCarlo :: proc(c: ^config, dane: data) {
+
 	best: result
 	best.chi2 = math.F64_MAX
 	oneOverSqrt2Pi: f64 = 1 / math.sqrt_f64(2 * math.PI)
+	startIdx := -1
+	endIdx := -1
 
+	prof_begin("liczeniePkt")
 	for j in 0 ..< len(dane.lambda) {
 		lambda := dane.lambda[j]
 		if lambda >= c.windowX - c.windowWidth && lambda <= c.windowX + c.windowWidth {
+			if startIdx == -1 do startIdx = j
 			c.numberOfPoints += 1
+			endIdx = j
 		}
 	}
+	prof_end()
+
+	if startIdx == -1 do return
+	pointsInWindow := endIdx - startIdx + 1
+
+
+	precalc_ln := make([]f64, pointsInWindow, context.temp_allocator)
+	for j in 0 ..< pointsInWindow {
+		lambda := dane.lambda[startIdx + j]
+		precalc_ln[j] = math.ln_f64(lambda / c.contLambda0)
+	}
+
 
 	for i in 0 ..< c.iterationCount {
 
+		prof_begin("MonteCarlo Iter")
 		//========Losowanie Parametrow
 		temp: result
 		temp.amplitude = rand.float64_uniform(
@@ -146,15 +191,16 @@ monteCarlo :: proc(c: ^config, dane: data) {
 		twoSigmaSqr := 2 * temp.sigma * temp.sigma
 		//========/Obliczanie
 
-		for j in 0 ..< len(dane.lambda) {
-			lambda := dane.lambda[j]
+		// NOTE: Wczesniej obliczylismy indeksy ktore znajduja sie w WindowX +- WindowWidth
+		// zatem teraz mozemy przejsc tylko po tych punktach
 
-			if lambda < c.windowX - c.windowWidth || lambda > c.windowX + c.windowWidth do continue // NOTE: Tu sprawdamy czy znajdujemy się na odpowiedniej dlugosci fali do zaobserwowania danej linii emisyjnej
+		#no_bounds_check for j in 0 ..< pointsInWindow {
+			lambda := dane.lambda[startIdx + j]
 
-
-			// NOTE: B * (lambda/lambda0)^-alpha
-			cont := c.contB * math.pow(lambda / c.contLambda0, temp.alpha) // FIX: czy przy temp.alpha musi byc -, z minusem wychodzi źle
-			tempFlux := dane.flux[j] - cont
+			// NOTE: B * (lambda/lambda0)^-alpha jest wolniejsze niz
+			// B exp(-alpha * ln(lambda/lambda0)) wiec korzystamy z tego
+			cont := c.contB * math.exp_f64(-temp.alpha * precalc_ln[j])
+			tempFlux := dane.flux[startIdx + j] - cont
 
 
 			// NOTE: A/(sigma * sqrt(2*Pi) * exp[-(lambda-x0)^2/(2sigma^2)]
@@ -174,8 +220,11 @@ monteCarlo :: proc(c: ^config, dane: data) {
 		if temp.chi2 < best.chi2 {
 			best = temp
 		}
+
+		prof_end()
 	}
-	c.finalResult = best
+	c.finalResult.result = best
+	findMinMaxParameters(c.results[:], c)
 }
 
 
@@ -226,6 +275,47 @@ chiSqr :: proc(experiment, expected: f64) -> f64 {
 	return chi
 }
 
+findMinMaxParameters :: proc(arr: []result, c: ^config) {
+
+	minAlpha := math.F64_MAX
+	maxAlpha := math.F64_MIN
+
+	minAmplitude := math.F64_MAX
+	maxAmplitude := math.F64_MIN
+
+	minSigma := math.F64_MAX
+	maxSigma := math.F64_MIN
+
+	minX0 := math.F64_MAX
+	maxX0 := math.F64_MIN
+
+	for e in arr {
+		if e.alpha < minAlpha do minAlpha = e.alpha
+		if e.alpha > maxAlpha do maxAlpha = e.alpha
+
+		if e.amplitude < minAmplitude do minAmplitude = e.amplitude
+		if e.amplitude > maxAmplitude do maxAmplitude = e.amplitude
+
+		if e.sigma < minSigma do minSigma = e.sigma
+		if e.sigma > maxSigma do maxSigma = e.sigma
+
+		if e.x0 < minX0 do minX0 = e.x0
+		if e.x0 > maxX0 do maxX0 = e.x0
+	}
+
+	c.finalResult.minAlpha = minAlpha
+	c.finalResult.maxAlpha = maxAlpha
+
+	c.finalResult.minAmplitude = minAmplitude
+	c.finalResult.maxAmplitude = maxAmplitude
+
+	c.finalResult.minSigma = minSigma
+	c.finalResult.maxSigma = maxSigma
+
+	c.finalResult.minX0 = minX0
+	c.finalResult.maxX0 = maxX0
+}
+
 //================== /Stat
 
 //================== File
@@ -239,6 +329,15 @@ saveResultsToFile :: proc(
 
 	fmt.sbprintf(&sb, "# seed: %v\n", c.seed)
 	fmt.sbprintf(&sb, "# N: %f\n", c.numberOfPoints)
+
+	fmt.sbprintf(&sb, "# minAmplitude: %v\n", c.finalResult.minAmplitude)
+	fmt.sbprintf(&sb, "# maxAmplitude: %v\n", c.finalResult.maxAmplitude)
+	fmt.sbprintf(&sb, "# minSigma: %v\n", c.finalResult.minSigma)
+	fmt.sbprintf(&sb, "# maxSigma: %v\n", c.finalResult.maxSigma)
+	fmt.sbprintf(&sb, "# minX0: %v\n", c.finalResult.minX0)
+	fmt.sbprintf(&sb, "# maxX0: %v\n", c.finalResult.maxX0)
+	fmt.sbprintf(&sb, "# minAlpha: %v\n", c.finalResult.minAlpha)
+	fmt.sbprintf(&sb, "# maxAlpha: %v\n", c.finalResult.maxAlpha)
 
 	strings.write_string(&sb, "# ")
 	strings.write_string(&sb, label)
