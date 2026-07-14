@@ -388,12 +388,13 @@ saveModelToFile :: proc(lambda, flux: []f64, label: string, c: config) {
 	sb := strings.builder_make()
 	defer strings.builder_destroy(&sb)
 
+	fmt.sbprintf(&sb, "# bestAmplitude: %v\n", c.finalResult.amplitude)
+	fmt.sbprintf(&sb, "# x0: %v\n", c.finalResult.x0)
+	fmt.sbprintf(&sb, "# alpha: %v\n", c.finalResult.alpha)
 	fmt.sbprintf(&sb, "# minAmplitude: %v\n", c.finalResult.minAmplitude)
 	fmt.sbprintf(&sb, "# maxAmplitude: %v\n", c.finalResult.maxAmplitude)
 	fmt.sbprintf(&sb, "# minSigma: %v\n", c.finalResult.minSigma)
 	fmt.sbprintf(&sb, "# maxSigma: %v\n", c.finalResult.maxSigma)
-	fmt.sbprintf(&sb, "# minX0: %v\n", c.finalResult.minX0)
-	fmt.sbprintf(&sb, "# maxX0: %v\n", c.finalResult.maxX0)
 	fmt.sbprintf(&sb, "# minAlpha: %v\n", c.finalResult.minAlpha)
 	fmt.sbprintf(&sb, "# maxAlpha: %v\n", c.finalResult.maxAlpha)
 
