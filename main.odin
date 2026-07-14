@@ -73,25 +73,25 @@ main :: proc() {
 	konfiguracja: config
 
 	konfiguracja.windowX = 2801
-	konfiguracja.windowWidth = 50
-	konfiguracja.chiThreshold = 2.5	// NOTE: wszystkie chi2/d.o.f < 2.5 są zapamiętywane !!!!
+	konfiguracja.windowWidth = 45	// NOTE: szerokość okna dopasowania
+	konfiguracja.chiThreshold = 1.0	// NOTE: wszystkie chi2/d.o.f < 1.0 są zapamiętywane !!!!
 	konfiguracja.parametrCount = 4
 
 
 	// NOTE: Flux_cont= B*(lambda/Lambda0)^-alphaGuess == B*exp[-alphaGuess * ln(lambda/Lambda0)]
 	konfiguracja.contLambda0 = 2750
-	konfiguracja.contB = 0.894 // NOTE: normalisation e.g. B=2.128 in units of 1e-16 erg/s/cm2 @ 3000 Angst
+	konfiguracja.contB = 0.92 // NOTE: normalisation e.g. B=2.128 in units of 1e-16 erg/s/cm2 @ 3000 Angst
 	konfiguracja.contAlphaGuess = 1.556
 	konfiguracja.contAlphaWidth = 0.1
 
 
 	// NOTE: Flux_line = amplitudeGuess* exp[ -(lambda-x0Guess)^2/(2*sigmaGuess^2)] 
-	konfiguracja.amplitudeGuess = 1
-	konfiguracja.amplitudeWidth = 0.5
+	konfiguracja.amplitudeGuess = 0.2
+	konfiguracja.amplitudeWidth = 0.1
 	konfiguracja.x0Guess = 2800
-	konfiguracja.x0Width = 50
-	konfiguracja.sigmaGuess = 16
-	konfiguracja.sigmaWidth = 2
+	konfiguracja.x0Width = 5
+	konfiguracja.sigmaGuess = 14
+	konfiguracja.sigmaWidth = 4
 
 	konfiguracja.iterationCount = 1_000_000 // NOTE: N=10^6 losowań
 	konfiguracja.percentOfBestChi2 = 0.01	// NOTE: 10% of the best chi2 values
@@ -113,10 +113,10 @@ main :: proc() {
 	konfiguracja.resultsDirPath = "./wyniki/"
 	konfiguracja.modelsDirPath = "./modele/"
 	//konfiguracja.dataPath = "./dane/qsospectrum.dat"	// <----- widmo kwazara 
-	konfiguracja.dataPath = "./dane/testModel.txt"		// <--- model do testowania
+	//konfiguracja.dataPath = "./dane/testModel.txt"		// <--- model do testowania
 	//konfiguracja.dataPath = "./dane/Block10.txt"
 	//konfiguracja.dataPath = "./dane/Block5.txt"
-	//konfiguracja.dataPath = "./dane/Moving10.txt"
+	konfiguracja.dataPath = "./dane/Moving10.txt"
 	//konfiguracja.dataPath = "./dane/Moving5.txt"
 
 	prof_begin("seedowanie rng")
@@ -379,8 +379,11 @@ findMinMaxParameters :: proc(arr: []result, c: ^config) {
 	c.finalResult.minAmplitude = minAmplitude
 	c.finalResult.maxAmplitude = maxAmplitude
 
-	c.finalResult.minSigma = minSigma
-	c.finalResult.maxSigma = maxSigma
+	//c.finalResult.minSigma = minSigma
+	//c.finalResult.maxSigma = maxSigma
+
+	c.finalResult.minSigma = maxSigma
+	c.finalResult.maxSigma = minSigma
 
 	c.finalResult.minX0 = minX0
 	c.finalResult.maxX0 = maxX0
