@@ -221,6 +221,7 @@ monteCarlo :: proc(c: ^config, dane: data) {
 			cont := c.contB * math.exp_f64(-temp.alpha * precalc_ln[j])
 			
 			tempFlux := dane.flux[startIdx + j]
+			//tempFlux := dane.flux[startIdx + j] - cont
 
 			// NOTE: A/(sigma * sqrt(2*Pi) * exp[-(lambda-x0)^2/(2sigma^2)]
 			lambdaDiff := lambda - temp.x0
