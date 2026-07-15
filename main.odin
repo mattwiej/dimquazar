@@ -126,6 +126,7 @@ main :: proc() {
 	monteCarlo(&konfiguracja, dane)
 	prof_end()
 
+	fmt.printf("Number of points: %f\n", konfiguracja.numberOfPoints)
 	fmt.printf("Results: %#v\n", konfiguracja.finalResult)
 
 	prof_begin("zapisywanie")
@@ -390,6 +391,7 @@ saveModelToFile :: proc(lambda, flux: []f64, label: string, c: config) {
 
 	fmt.sbprintf(&sb, "# bestAmplitude: %v\n", c.finalResult.amplitude)
 	fmt.sbprintf(&sb, "# x0: %v\n", c.finalResult.x0)
+	fmt.sbprintf(&sb, "# B: %v\n", c.contB)
 	fmt.sbprintf(&sb, "# alpha: %v\n", c.finalResult.alpha)
 	fmt.sbprintf(&sb, "# minAmplitude: %v\n", c.finalResult.minAmplitude)
 	fmt.sbprintf(&sb, "# maxAmplitude: %v\n", c.finalResult.maxAmplitude)
