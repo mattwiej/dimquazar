@@ -73,24 +73,28 @@ main :: proc() {
 	konfiguracja: config
 
 	konfiguracja.windowX = 2801
-	konfiguracja.windowWidth = 50
-	konfiguracja.chiThreshold = 3
+	konfiguracja.windowWidth = 45	// NOTE: szerokość okna dopasowania
+	konfiguracja.chiThreshold = 1.0	// NOTE: wszystkie chi2/d.o.f < 1.0 są zapamiętywane !!!!
 	konfiguracja.parametrCount = 4
 
-	konfiguracja.contLambda0 = 3000
-	konfiguracja.contB = 2.128 // NOTE: Flux musi byc w jednostkch 10^-16
+
+	// NOTE: Flux_cont= B*(lambda/Lambda0)^-alphaGuess == B*exp[-alphaGuess * ln(lambda/Lambda0)]
+	konfiguracja.contLambda0 = 2750
+	konfiguracja.contB = 0.90 // NOTE: normalisation e.g. B=2.128 in units of 1e-16 erg/s/cm2 @ 3000 Angst
 	konfiguracja.contAlphaGuess = 1.556
 	konfiguracja.contAlphaWidth = 0.1
 
-	konfiguracja.amplitudeGuess = 1
-	konfiguracja.amplitudeWidth = 3
-	konfiguracja.x0Guess = 2800
-	konfiguracja.x0Width = 50
-	konfiguracja.sigmaGuess = 16
-	konfiguracja.sigmaWidth = 2
 
-	konfiguracja.iterationCount = 1_000_000
-	konfiguracja.percentOfBestChi2 = 0.01
+	// NOTE: Flux_line = amplitudeGuess* exp[ -(lambda-x0Guess)^2/(2*sigmaGuess^2)] 
+	konfiguracja.amplitudeGuess = 0.2
+	konfiguracja.amplitudeWidth = 0.1
+	konfiguracja.x0Guess = 2800
+	konfiguracja.x0Width = 3
+	konfiguracja.sigmaGuess = 14
+	konfiguracja.sigmaWidth = 4
+
+	konfiguracja.iterationCount = 1_000_000 // NOTE: N=10^6 losowań
+	konfiguracja.percentOfBestChi2 = 0.01	// NOTE: 10% of the best chi2 values
 	length := f64(konfiguracja.iterationCount) * konfiguracja.percentOfBestChi2 //length to dlugosc tablicy do konfiguracja.results
 
 	konfiguracja.results = make([dynamic]result, i32(length), i32(length))
@@ -98,7 +102,7 @@ main :: proc() {
 	prof_begin("zerowanie tablicy wynikow")
 	for &w in konfiguracja.results {
 		// NOTE: musimy dodac tu max f64 bo inaczej nie zapiszemy wynikow do tej tablicy,
-		// powiewaz domyslnie pamiec w Odnie jest zerowana a chi^2 nie bedzie mniejsze od zera
+		// powiewaz domyslnie pamiec w Odinie jest zerowana a chi^2 nie bedzie mniejsze od zera
 		w.chi2 = math.F64_MAX
 	}
 	prof_end()
@@ -108,10 +112,11 @@ main :: proc() {
 
 	konfiguracja.resultsDirPath = "./wyniki/"
 	konfiguracja.modelsDirPath = "./modele/"
-	konfiguracja.dataPath = "./dane/testModel.txt"
+	//konfiguracja.dataPath = "./dane/qsospectrum.dat"	// <----- widmo kwazara 
+	//konfiguracja.dataPath = "./dane/testModel.txt"		// <--- model do testowania
 	//konfiguracja.dataPath = "./dane/Block10.txt"
 	//konfiguracja.dataPath = "./dane/Block5.txt"
-	//konfiguracja.dataPath = "./dane/Moving10.txt"
+	konfiguracja.dataPath = "./dane/Moving10.txt"		// <----- widmo wygładzone średnią kroczącą
 	//konfiguracja.dataPath = "./dane/Moving5.txt"
 
 	prof_begin("seedowanie rng")
@@ -202,8 +207,8 @@ monteCarlo :: proc(c: ^config, dane: data) {
 		//========/Losowanie Parametrow
 
 		//========Oblicznie parametrow ktore nie zmieniaja sie w ponizszej petli
-		A := temp.amplitude / temp.sigma * oneOverSqrt2Pi
-		twoSigmaSqr := 2 * temp.sigma * temp.sigma
+		A := temp.amplitude / temp.sigma * oneOverSqrt2Pi	// A=amplitude/(2*Pi*sigma)
+		twoSigmaSqr := 2 * temp.sigma * temp.sigma		// twoSigmaSqr = 2*sigma^2
 		//========/Obliczanie
 
 		// NOTE: Wczesniej obliczylismy indeksy ktore znajduja sie w WindowX +- WindowWidth
@@ -215,15 +220,15 @@ monteCarlo :: proc(c: ^config, dane: data) {
 			// NOTE: B * (lambda/lambda0)^-alpha jest wolniejsze niz
 			// B exp(-alpha * ln(lambda/lambda0)) wiec korzystamy z tego
 			cont := c.contB * math.exp_f64(-temp.alpha * precalc_ln[j])
-			tempFlux := dane.flux[startIdx + j] - cont
-
+			
+			tempFlux := dane.flux[startIdx + j]
 
 			// NOTE: A/(sigma * sqrt(2*Pi) * exp[-(lambda-x0)^2/(2sigma^2)]
 			lambdaDiff := lambda - temp.x0
 			exponent := -(lambdaDiff * lambdaDiff) / twoSigmaSqr
 
-			//modelFlux := A * math.exp_f64(exponent)
-			modelFlux := temp.amplitude * math.exp_f64(exponent)
+			//modelFlux := cont + A * math.exp_f64(exponent)	// = continuum + amplitude/(2*Pi*sigma)*exp[-(lambda-x0)^2/(2sigma^2)]
+			modelFlux := cont + temp.amplitude * math.exp_f64(exponent) 	// = continuum + amplitude*exp[-(lambda-x0)^2/(2sigma^2)]
 			temp.chi2 += chiSqr(tempFlux, modelFlux)
 
 		}
@@ -375,8 +380,11 @@ findMinMaxParameters :: proc(arr: []result, c: ^config) {
 	c.finalResult.minAmplitude = minAmplitude
 	c.finalResult.maxAmplitude = maxAmplitude
 
-	c.finalResult.minSigma = minSigma
-	c.finalResult.maxSigma = maxSigma
+	//c.finalResult.minSigma = minSigma
+	//c.finalResult.maxSigma = maxSigma
+
+	c.finalResult.minSigma = maxSigma
+	c.finalResult.maxSigma = minSigma
 
 	c.finalResult.minX0 = minX0
 	c.finalResult.maxX0 = maxX0
@@ -389,16 +397,27 @@ saveModelToFile :: proc(lambda, flux: []f64, label: string, c: config) {
 	sb := strings.builder_make()
 	defer strings.builder_destroy(&sb)
 
+<<<<<<< HEAD
 	fmt.sbprintf(&sb, "# bestAmplitude: %v\n", c.finalResult.amplitude)
 	fmt.sbprintf(&sb, "# x0: %v\n", c.finalResult.x0)
 	fmt.sbprintf(&sb, "# B: %v\n", c.contB)
+=======
+	fmt.sbprintf(&sb, "# normalisB: %v\n", c.contB)
+	fmt.sbprintf(&sb, "# normalisLambda: %v\n", c.contLambda0)
+>>>>>>> 037fee42702f125f6d20859990c97fac57531344
 	fmt.sbprintf(&sb, "# alpha: %v\n", c.finalResult.alpha)
-	fmt.sbprintf(&sb, "# minAmplitude: %v\n", c.finalResult.minAmplitude)
+
+	fmt.sbprintf(&sb, "# bestAmplitude: %v\n", c.finalResult.amplitude)
+	fmt.sbprintf(&sb, "# bestSigma: %v\n", c.finalResult.sigma)
+	fmt.sbprintf(&sb, "# bestx0: %v\n", c.finalResult.x0)
+
 	fmt.sbprintf(&sb, "# maxAmplitude: %v\n", c.finalResult.maxAmplitude)
-	fmt.sbprintf(&sb, "# minSigma: %v\n", c.finalResult.minSigma)
 	fmt.sbprintf(&sb, "# maxSigma: %v\n", c.finalResult.maxSigma)
-	fmt.sbprintf(&sb, "# minAlpha: %v\n", c.finalResult.minAlpha)
-	fmt.sbprintf(&sb, "# maxAlpha: %v\n", c.finalResult.maxAlpha)
+	fmt.sbprintf(&sb, "# bestx0: %v\n", c.finalResult.x0)
+
+	fmt.sbprintf(&sb, "# minAmplitude: %v\n", c.finalResult.minAmplitude)
+	fmt.sbprintf(&sb, "# minSigma: %v\n", c.finalResult.minSigma)
+	fmt.sbprintf(&sb, "# bestx0: %v\n", c.finalResult.x0)
 
 	fmt.sbprint(&sb, "# Wavelength(A) Flux_density(10^{-16} erg/s^{-1}/cm^{-2}/A^{-1})\n")
 
