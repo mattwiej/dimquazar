@@ -27,6 +27,8 @@ config :: struct {
 	//===Gauss
 	windowX:           f64,
 	windowWidth:       f64, // NOTE: +/- windowX
+	windowWidthLeft:   f64,
+	windowWidthRight:  f64,
 	amplitudeGuess:    f64,
 	amplitudeWidth:    f64,
 	sigmaGuess:        f64,
@@ -73,8 +75,10 @@ main :: proc() {
 	konfiguracja: config
 
 	konfiguracja.windowX = 2801
-	konfiguracja.windowWidth = 45	// NOTE: szerokość okna dopasowania
-	konfiguracja.chiThreshold = 1.0	// NOTE: wszystkie chi2/d.o.f < 1.0 są zapamiętywane !!!!
+	//konfiguracja.windowWidth = 45 // NOTE: szerokość okna dopasowania
+	konfiguracja.windowWidthLeft = 22.5
+	konfiguracja.windowWidthRight = 20
+	konfiguracja.chiThreshold = 1.0 // NOTE: wszystkie chi2/d.o.f < 1.0 są zapamiętywane !!!!
 	konfiguracja.parametrCount = 4
 
 
@@ -85,7 +89,7 @@ main :: proc() {
 	konfiguracja.contAlphaWidth = 0.1
 
 
-	// NOTE: Flux_line = amplitudeGuess* exp[ -(lambda-x0Guess)^2/(2*sigmaGuess^2)] 
+	// NOTE: Flux_line = amplitudeGuess* exp[ -(lambda-x0Guess)^2/(2*sigmaGuess^2)]
 	konfiguracja.amplitudeGuess = 0.2
 	konfiguracja.amplitudeWidth = 0.1
 	konfiguracja.x0Guess = 2800
@@ -94,7 +98,7 @@ main :: proc() {
 	konfiguracja.sigmaWidth = 4
 
 	konfiguracja.iterationCount = 1_000_000 // NOTE: N=10^6 losowań
-	konfiguracja.percentOfBestChi2 = 0.01	// NOTE: 10% of the best chi2 values
+	konfiguracja.percentOfBestChi2 = 0.01 // NOTE: 10% of the best chi2 values
 	length := f64(konfiguracja.iterationCount) * konfiguracja.percentOfBestChi2 //length to dlugosc tablicy do konfiguracja.results
 
 	konfiguracja.results = make([dynamic]result, i32(length), i32(length))
@@ -112,11 +116,11 @@ main :: proc() {
 
 	konfiguracja.resultsDirPath = "./wyniki/"
 	konfiguracja.modelsDirPath = "./modele/"
-	//konfiguracja.dataPath = "./dane/qsospectrum.dat"	// <----- widmo kwazara 
+	//konfiguracja.dataPath = "./dane/qsospectrum.dat"	// <----- widmo kwazara
 	//konfiguracja.dataPath = "./dane/testModel.txt"		// <--- model do testowania
 	//konfiguracja.dataPath = "./dane/Block10.txt"
 	//konfiguracja.dataPath = "./dane/Block5.txt"
-	konfiguracja.dataPath = "./dane/Moving10.txt"		// <----- widmo wygładzone średnią kroczącą
+	konfiguracja.dataPath = "./dane/Moving10.txt" // <----- widmo wygładzone średnią kroczącą
 	//konfiguracja.dataPath = "./dane/Moving5.txt"
 
 	prof_begin("seedowanie rng")
@@ -132,6 +136,10 @@ main :: proc() {
 	prof_end()
 
 	fmt.printf("Number of points: %f\n", konfiguracja.numberOfPoints)
+	fmt.printf(
+		"chi2/d.o.f:",
+		konfiguracja.finalResult.chi2 / (konfiguracja.numberOfPoints - konfiguracja.parametrCount),
+	)
 	fmt.printf("Results: %#v\n", konfiguracja.finalResult)
 
 	prof_begin("zapisywanie")
@@ -170,7 +178,7 @@ monteCarlo :: proc(c: ^config, dane: data) {
 	prof_begin("liczeniePkt")
 	for j in 0 ..< len(dane.lambda) {
 		lambda := dane.lambda[j]
-		if lambda >= c.windowX - c.windowWidth && lambda <= c.windowX + c.windowWidth {
+		if lambda >= c.windowX - c.windowWidthLeft && lambda <= c.windowX + c.windowWidthRight {
 			if startIdx == -1 do startIdx = j
 			c.numberOfPoints += 1
 			endIdx = j
@@ -207,8 +215,8 @@ monteCarlo :: proc(c: ^config, dane: data) {
 		//========/Losowanie Parametrow
 
 		//========Oblicznie parametrow ktore nie zmieniaja sie w ponizszej petli
-		A := temp.amplitude / temp.sigma * oneOverSqrt2Pi	// A=amplitude/(2*Pi*sigma)
-		twoSigmaSqr := 2 * temp.sigma * temp.sigma		// twoSigmaSqr = 2*sigma^2
+		A := temp.amplitude / temp.sigma * oneOverSqrt2Pi // A=amplitude/(2*Pi*sigma)
+		twoSigmaSqr := 2 * temp.sigma * temp.sigma // twoSigmaSqr = 2*sigma^2
 		//========/Obliczanie
 
 		// NOTE: Wczesniej obliczylismy indeksy ktore znajduja sie w WindowX +- WindowWidth
@@ -220,7 +228,7 @@ monteCarlo :: proc(c: ^config, dane: data) {
 			// NOTE: B * (lambda/lambda0)^-alpha jest wolniejsze niz
 			// B exp(-alpha * ln(lambda/lambda0)) wiec korzystamy z tego
 			cont := c.contB * math.exp_f64(-temp.alpha * precalc_ln[j])
-			
+
 			tempFlux := dane.flux[startIdx + j]
 
 			// NOTE: A/(sigma * sqrt(2*Pi) * exp[-(lambda-x0)^2/(2sigma^2)]
@@ -228,7 +236,7 @@ monteCarlo :: proc(c: ^config, dane: data) {
 			exponent := -(lambdaDiff * lambdaDiff) / twoSigmaSqr
 
 			//modelFlux := cont + A * math.exp_f64(exponent)	// = continuum + amplitude/(2*Pi*sigma)*exp[-(lambda-x0)^2/(2sigma^2)]
-			modelFlux := cont + temp.amplitude * math.exp_f64(exponent) 	// = continuum + amplitude*exp[-(lambda-x0)^2/(2sigma^2)]
+			modelFlux := cont + temp.amplitude * math.exp_f64(exponent) // = continuum + amplitude*exp[-(lambda-x0)^2/(2sigma^2)]
 			temp.chi2 += chiSqr(tempFlux, modelFlux)
 
 		}
@@ -397,14 +405,10 @@ saveModelToFile :: proc(lambda, flux: []f64, label: string, c: config) {
 	sb := strings.builder_make()
 	defer strings.builder_destroy(&sb)
 
-<<<<<<< HEAD
 	fmt.sbprintf(&sb, "# bestAmplitude: %v\n", c.finalResult.amplitude)
 	fmt.sbprintf(&sb, "# x0: %v\n", c.finalResult.x0)
-	fmt.sbprintf(&sb, "# B: %v\n", c.contB)
-=======
 	fmt.sbprintf(&sb, "# normalisB: %v\n", c.contB)
 	fmt.sbprintf(&sb, "# normalisLambda: %v\n", c.contLambda0)
->>>>>>> 037fee42702f125f6d20859990c97fac57531344
 	fmt.sbprintf(&sb, "# alpha: %v\n", c.finalResult.alpha)
 
 	fmt.sbprintf(&sb, "# bestAmplitude: %v\n", c.finalResult.amplitude)
