@@ -136,10 +136,8 @@ main :: proc() {
 	prof_end()
 
 	fmt.printf("Number of points: %f\n", konfiguracja.numberOfPoints)
-	fmt.printf(
-		"chi2/d.o.f:",
-		konfiguracja.finalResult.chi2 / (konfiguracja.numberOfPoints - konfiguracja.parametrCount),
-	)
+	dof := konfiguracja.numberOfPoints - konfiguracja.parametrCount
+	fmt.printf("chi2/d.o.f: %e\n", konfiguracja.finalResult.chi2 / dof)
 	fmt.printf("Results: %#v\n", konfiguracja.finalResult)
 
 	prof_begin("zapisywanie")
@@ -325,7 +323,7 @@ generateMathematicalModels :: proc(dane: data, c: config) {
 	for i := 0; i < len(dane.lambda); i += 1 {
 		l := dane.lambda[i]
 		modelFlux[i] = c.contB * math.pow((l / c.contLambda0), -bestAlpha)
-		if l >= c.windowX - c.windowWidth && l <= c.windowX + c.windowWidth {
+		if l >= c.windowX - c.windowWidthLeft && l <= c.windowX + c.windowWidthRight {
 			if startIdx == -1 do startIdx = i
 			endIdx = i
 		}
