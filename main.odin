@@ -106,7 +106,7 @@ main :: proc() {
 	prof_begin("zerowanie tablicy wynikow")
 	for &w in konfiguracja.results {
 		// NOTE: musimy dodac tu max f64 bo inaczej nie zapiszemy wynikow do tej tablicy,
-		// powiewaz domyslnie pamiec w Odinie jest zerowana a chi^2 nie bedzie mniejsze od zera
+		//  powiewaz domyslnie pamiec w Odinie jest zerowana a chi^2 nie bedzie mniejsze od zera
 		w.chi2 = math.F64_MAX
 	}
 	prof_end()
@@ -195,7 +195,7 @@ monteCarlo :: proc(c: ^config, dane: data) {
 	}
 
 
-	for i in 0 ..< c.iterationCount {
+	#no_bounds_check for i in 0 ..< c.iterationCount {
 
 		prof_begin("MonteCarlo Iter")
 		//========Losowanie Parametrow
@@ -488,38 +488,6 @@ saveResultsToFile :: proc(c: config, label: string = "chi2 amplitude sigma x0 al
 		fmt.eprintfln("Failed to save to file: %s\n", path)
 	} else {
 		fmt.printf("Saved to file: %s\n", path)
-	}
-}
-
-saveResultsToFileJson :: proc(c: config, path: string) {
-	saveTemplate :: struct {
-		seed:    u64,
-		N:       f64,
-		results: []result,
-	}
-
-	dataToSave: saveTemplate = {
-		seed    = c.seed,
-		N       = c.numberOfPoints,
-		results = c.results[:],
-	}
-
-	opt := json.Marshal_Options {
-		pretty = true,
-	}
-	jsonData, jsonErr := json.marshal(dataToSave, opt)
-
-	if jsonErr != nil {
-		fmt.eprintfln("JSON Error: %v", jsonErr)
-		return
-	}
-
-	//defer delete(jsonData)
-
-	ok := os.write_entire_file(path, jsonData)
-
-	if ok != nil {
-		fmt.eprintfln("JSON failed to save file: %s", path)
 	}
 }
 
